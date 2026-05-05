@@ -1,0 +1,290 @@
+{
+  "name": "Support Request Intake Workflow v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5adb6453-5713-4e51-bbf7-a1cccb8e1e46",
+      "name": "Webhook",
+      "webhookId": "7601660f-89e5-449d-87b6-9e464e6f8170"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "app",
+          "mode": "list",
+          "cachedResultName": "app"
+        },
+        "table": {
+          "__rl": true,
+          "value": "support_requests",
+          "mode": "list",
+          "cachedResultName": "support_requests"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customer_name": "={{$json.customer_name}}",
+            "customer_email": "={{$json.customer_email}}",
+            "message": "={{$json.message}}",
+            "category": "={{$json.category}}",
+            "priority": "={{$json.priority}}",
+            "summary": "={{$json.summary}}",
+            "extracted_data": "={{$json.extracted_data}}",
+            "suggested_reply": "={{$json.suggested_reply}}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "customer_email",
+              "displayName": "customer_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "extracted_data",
+              "displayName": "extracted_data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suggested_reply",
+              "displayName": "suggested_reply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approval_status",
+              "displayName": "approval_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        0
+      ],
+      "id": "b9284752-c0c3-478a-a6e2-90e6175b4ca9",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "E1wA7DwtUNdE6OwO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"received\",\n  \"approvalStatus\": \"PENDING_APPROVAL\",\n  \"message\": \"Request was analyzed by Ollama and saved for human review.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        0
+      ],
+      "id": "cf7b062e-f9ee-45ed-8d98-f8b020b4c5e3",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3.2:3b\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI assistant for a customer support automation workflow. Analyze the customer request and return only valid JSON. Do not use markdown. Do not add explanations. The JSON must contain: category, priority, summary, extractedData, suggestedReply. Priority must be one of: low, medium, high.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Customer name: {{$json.body.customerName}}\\nCustomer email: {{$json.body.email}}\\nCustomer message: {{$json.body.message}}\"\n    }\n  ],\n  \"stream\": false,\n  \"format\": \"json\",\n  \"options\": {\n    \"temperature\": 0.1\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "13c3bfb9-6884-4aa7-b210-50ed5dd59aa0",
+      "name": "Ollama - Analyze Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const originalRequest = $('Webhook').first().json.body;\nconst ollamaResponse = $input.first().json;\n\nconst rawContent = ollamaResponse.message?.content;\n\nlet aiResult;\n\ntry {\n  aiResult = JSON.parse(rawContent);\n} catch (error) {\n  aiResult = {\n    category: \"unknown\",\n    priority: \"medium\",\n    summary: \"AI response could not be parsed as valid JSON.\",\n    extractedData: {\n      rawResponse: rawContent\n    },\n    suggestedReply: \"Thank you for your message. Your request will be reviewed by our support team.\"\n  };\n}\n\nconst allowedPriorities = [\"low\", \"medium\", \"high\"];\n\nconst priority = allowedPriorities.includes(aiResult.priority)\n  ? aiResult.priority\n  : \"medium\";\n\nreturn [\n  {\n    json: {\n      customer_name: originalRequest.customerName,\n      customer_email: originalRequest.email,\n      message: originalRequest.message,\n\n      category: aiResult.category || \"unknown\",\n      priority: priority,\n      summary: aiResult.summary || \"No summary generated.\",\n      extracted_data: JSON.stringify(aiResult.extractedData || {}),\n      suggested_reply: aiResult.suggestedReply || \"Thank you for your message. Your request will be reviewed by our support team.\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "bac746ef-e3d2-45b7-a6b4-9d9fc909052b",
+      "name": "Code - Parse AI Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Ollama - Analyze Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama - Analyze Request": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse AI Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse AI Result": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "829ac584-0b8d-48ce-98c7-026ece7cc002",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4cf081b9019b3ef5ee44def26d8706f6f8a10805c34ef54d2399312b51eac10d"
+  },
+  "id": "Bv7g6svSq1CDRshc",
+  "tags": []
+}
