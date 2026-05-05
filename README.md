@@ -36,4 +36,4 @@ Every AI-generated reply must first be reviewed by a human.
 
 ## Status
 
-Current phase: Project setup and MVP definition.
+Current phase: Improve the prompt + make AI output more stable
