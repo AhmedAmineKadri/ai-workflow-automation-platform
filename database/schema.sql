@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS app.support_requests (
 
     approval_status VARCHAR(30) NOT NULL DEFAULT 'PENDING_APPROVAL',
 
+    reviewed_by VARCHAR(100),
+    review_comment TEXT,
+    reviewed_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
