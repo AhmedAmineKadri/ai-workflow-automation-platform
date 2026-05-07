@@ -1,0 +1,381 @@
+{
+  "name": "Review Support Request Workflow v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "review-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "8d521a99-bd83-41d1-bf58-5ef7d7e63ac7",
+      "name": "Webhook",
+      "webhookId": "7ff63ce6-1546-4fce-a61e-43fc54cffe1f"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\n\nconst errors = [];\n\nconst requestId = Number(body.requestId);\n\nconst rawDecision = typeof body.decision === \"string\"\n  ? body.decision.trim()\n  : \"\";\n\nconst decision = rawDecision.toUpperCase();\n\nconst reviewedBy = typeof body.reviewedBy === \"string\"\n  ? body.reviewedBy.trim()\n  : \"\";\n\nconst comment = typeof body.comment === \"string\"\n  ? body.comment.trim()\n  : \"\";\n\nif (!Number.isInteger(requestId) || requestId <= 0) {\n  errors.push(\"requestId must be a positive integer\");\n}\n\nif (!rawDecision) {\n  errors.push(\"decision is required\");\n} else if (![\"APPROVED\", \"REJECTED\"].includes(decision)) {\n  errors.push(\"decision must be APPROVED or REJECTED\");\n}\n\nif (!reviewedBy) {\n  errors.push(\"reviewedBy is required\");\n}\n\nif (comment.length > 1000) {\n  errors.push(\"comment must not be longer than 1000 characters\");\n}\n\nconst validationStatus = errors.length === 0 ? \"VALID\" : \"INVALID\";\n\nreturn [\n  {\n    json: {\n      valid: errors.length === 0,\n      validationStatus,\n      errors,\n      requestId,\n      decision,\n      reviewedBy,\n      comment\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "27f302ef-bf77-4dc0-92b1-2fe82e9d33cc",
+      "name": "Code - Validate Review Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b9ea137f-29b1-45a1-a70c-bc270564e7a1",
+              "leftValue": "={{ $json.validationStatus }}",
+              "rightValue": "VALID",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        384,
+        0
+      ],
+      "id": "def344e6-4a6c-475a-b96e-b88e33fd3dcb",
+      "name": "IF - Is Review Input Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn [\n  {\n    json: {\n      status: \"error\",\n      message: \"Invalid review request input.\",\n      errors: input.errors\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        96
+      ],
+      "id": "7edb1e2e-7e44-43c3-9b13-443d02c73467",
+      "name": "Code - Build Review Error Response"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1072,
+        96
+      ],
+      "id": "0400d00f-cd75-4328-adf6-4e75e2250e32",
+      "name": "Respond - Review Error"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE app.support_requests\nSET\n    approval_status = '{{ $json.decision }}',\n    reviewed_by = '{{ $json.reviewedBy.replaceAll(\"'\", \"''\") }}',\n    review_comment = '{{ $json.comment.replaceAll(\"'\", \"''\") }}',\n    reviewed_at = NOW(),\n    updated_at = NOW()\nWHERE id = {{ $json.requestId }}\n  AND approval_status = 'PENDING_APPROVAL'\nRETURNING\n    id,\n    customer_name,\n    customer_email,\n    approval_status,\n    reviewed_by,\n    review_comment,\n    reviewed_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1376,
+        -224
+      ],
+      "id": "01c318e5-99b3-4ff9-8299-5f74fe860cfd",
+      "name": "PostgreSQL - Update Review Status",
+      "credentials": {
+        "postgres": {
+          "id": "E1wA7DwtUNdE6OwO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1856,
+        -224
+      ],
+      "id": "b0a46252-d3af-4453-acb4-df401b2f8867",
+      "name": "Respond - Review Success"
+    },
+    {
+      "parameters": {
+        "jsCode": "const reviewInput = $('Code - Validate Review Input').first().json;\n\nreturn [\n  {\n    json: {\n      status: \"success\",\n      message: \"Review decision was saved successfully.\",\n      requestId: reviewInput.requestId,\n      decision: reviewInput.decision,\n      reviewedBy: reviewInput.reviewedBy\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        -224
+      ],
+      "id": "09f4dbd1-8ef6-42da-8e32-8be6df4e93dd",
+      "name": "Code - Build Review Success Response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    {{ $json.requestId }}::BIGINT AS request_id,\n    EXISTS (\n        SELECT 1\n        FROM app.support_requests\n        WHERE id = {{ $json.requestId }}\n    ) AS request_exists,\n    (\n        SELECT approval_status\n        FROM app.support_requests\n        WHERE id = {{ $json.requestId }}\n    ) AS current_status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        -208
+      ],
+      "id": "616c2f2f-367c-4446-b962-4c7a1e2a06bd",
+      "name": "PostgreSQL - Check Request Status",
+      "credentials": {
+        "postgres": {
+          "id": "E1wA7DwtUNdE6OwO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const reviewInput = $('Code - Validate Review Input').first().json;\nconst dbResult = $input.first().json;\n\nconst errors = [];\n\nif (!dbResult.request_exists) {\n  errors.push(\"requestId does not exist\");\n} else if (dbResult.current_status !== \"PENDING_APPROVAL\") {\n  errors.push(`request is already ${dbResult.current_status}`);\n}\n\nconst canReview = errors.length === 0 ? \"YES\" : \"NO\";\n\nreturn [\n  {\n    json: {\n      ...reviewInput,\n      requestExists: dbResult.request_exists,\n      currentStatus: dbResult.current_status,\n      canReview,\n      errors\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -208
+      ],
+      "id": "fec781d8-b335-427f-ba15-780f5cbd680b",
+      "name": "Code - Check Review Eligibility"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "191e7fa3-1a3c-43bd-9a0b-806fee55ad81",
+              "leftValue": "={{ $json.canReview }}",
+              "rightValue": "YES",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1088,
+        -208
+      ],
+      "id": "d857c6b6-e333-4f98-9cb3-dd5a8ad6d49c",
+      "name": "IF - Can Review Request?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn [\n  {\n    json: {\n      status: \"error\",\n      message: \"Request is not pending approval or does not exist.\",\n      requestId: input.requestId,\n      currentStatus: input.currentStatus || null,\n      errors: input.errors\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        -64
+      ],
+      "id": "a7fc0158-2235-4b23-8997-a2c7125fb3c4",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1472,
+        -64
+      ],
+      "id": "4f852bfe-e85f-4b30-8acd-2f9cc51e09c5",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Review Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Review Input": {
+      "main": [
+        [
+          {
+            "node": "IF - Is Review Input Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Is Review Input Valid?": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Check Request Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Build Review Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Review Error Response": {
+      "main": [
+        [
+          {
+            "node": "Respond - Review Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL - Update Review Status": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Review Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Review Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond - Review Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PostgreSQL - Check Request Status": {
+      "main": [
+        [
+          {
+            "node": "Code - Check Review Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Check Review Eligibility": {
+      "main": [
+        [
+          {
+            "node": "IF - Can Review Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Can Review Request?": {
+      "main": [
+        [
+          {
+            "node": "PostgreSQL - Update Review Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3c0390cf-1386-4a5a-b79b-1f1e90693176",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4cf081b9019b3ef5ee44def26d8706f6f8a10805c34ef54d2399312b51eac10d"
+  },
+  "id": "AjDBhTLDeSUk8j5v",
+  "tags": []
+}
