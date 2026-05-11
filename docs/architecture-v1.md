@@ -1,5 +1,5 @@
 # Architecture Version 1
-
+> This document describes the first MVP architecture. For the current architecture, see `docs/architecture.md`.
 ## Simple Architecture
 
 ```text
