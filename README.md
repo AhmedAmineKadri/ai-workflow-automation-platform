@@ -2,7 +2,7 @@
 
 This is a student portfolio project that demonstrates how to build a realistic AI-powered workflow automation system.
 
-The system automates incoming customer/support requests using n8n, a local LLM with Ollama, PostgreSQL, Docker Compose, webhooks, and a human approval step.
+The system automates incoming customer/support requests using n8n, a local LLM with Ollama, PostgreSQL, Docker Compose, webhooks, workflow logging, and a human approval step.
 
 The main goal is not to let AI fully replace a human support agent. Instead, the AI prepares a structured suggestion, and a human reviewer must approve or reject it before it is accepted.
 
@@ -24,6 +24,7 @@ The system should:
 8. Store the original request and AI result in PostgreSQL.
 9. Mark the request as `PENDING_APPROVAL`.
 10. Allow a human reviewer to approve or reject the AI-generated suggestion.
+11. Log important workflow events for debugging and traceability.
 
 ---
 
@@ -40,7 +41,7 @@ This project is designed as a realistic portfolio project for Werkstudent and en
 - Java/Spring Boot extension possibilities
 - Human-in-the-loop AI systems
 
-It shows practical experience with APIs, databases, Docker, n8n workflows, local LLMs, validation, error handling, and approval logic.
+It shows practical experience with APIs, databases, Docker, n8n workflows, local LLMs, validation, error handling, approval logic, and workflow logging.
 
 ---
 
@@ -49,7 +50,7 @@ It shows practical experience with APIs, databases, Docker, n8n workflows, local
 - **n8n** — workflow automation
 - **Ollama** — local LLM provider
 - **llama3.2:3b** — local language model used for testing
-- **PostgreSQL** — stores support requests and AI results
+- **PostgreSQL** — stores support requests, AI results, approval data, and workflow logs
 - **Docker Compose** — local infrastructure setup
 - **Webhooks** — REST-style workflow input
 - **GitHub** — version control and documentation
@@ -60,7 +61,7 @@ It shows practical experience with APIs, databases, Docker, n8n workflows, local
 
 ### 1. Support Request Workflow
 
-The first workflow receives a customer support request, sends it to Ollama for AI analysis, parses the AI response, stores the result in PostgreSQL, and returns a response to the caller.
+The support request workflow receives a customer support request, validates it, sends it to Ollama for AI analysis, parses the AI response, stores the result in PostgreSQL, writes workflow logs, and returns a response to the caller.
 
 Workflow:
 
@@ -69,11 +70,16 @@ Webhook
    ↓
 Input Validation
    ↓
+IF Input Valid?
+   ├── false → Log Validation Failed → Return Error Response
+   ↓ true
 Ollama AI Analysis
    ↓
 Parse AI JSON
    ↓
 PostgreSQL Insert
+   ↓
+Log Request Saved
    ↓
 Webhook Response
 ```
@@ -88,7 +94,7 @@ Example input:
 }
 ```
 
-Example response:
+Example success response:
 
 ```json
 {
@@ -98,11 +104,27 @@ Example response:
 }
 ```
 
+Example validation error response:
+
+```json
+{
+  "status": "error",
+  "message": "Invalid support request input.",
+  "errors": [
+    "customerName is required",
+    "email is required",
+    "message must be at least 10 characters long"
+  ]
+}
+```
+
 ---
 
 ### 2. Review Approval Workflow
 
-The second workflow allows a human reviewer to approve or reject an AI-generated support suggestion.
+The review workflow allows a human reviewer to approve or reject an AI-generated support suggestion.
+
+It validates the review input, checks whether the request exists and is still `PENDING_APPROVAL`, updates the request if allowed, writes workflow logs, and returns a response.
 
 Workflow:
 
@@ -111,11 +133,17 @@ Webhook
    ↓
 Review Input Validation
    ↓
+IF Review Input Valid?
+   ├── false → Log Review Validation Failed → Return Error Response
+   ↓ true
 Check Request Status in PostgreSQL
    ↓
-If request is PENDING_APPROVAL
-   ↓
+IF Request Can Be Reviewed?
+   ├── false → Log Review Blocked → Return Conflict Response
+   ↓ true
 Update to APPROVED or REJECTED
+   ↓
+Log Review Completed
    ↓
 Webhook Response
 ```
@@ -157,11 +185,77 @@ Example error response for an already reviewed request:
 }
 ```
 
+Example invalid review input response:
+
+```json
+{
+  "status": "error",
+  "message": "Invalid review request input.",
+  "errors": [
+    "requestId must be a positive integer",
+    "decision must be APPROVED or REJECTED",
+    "reviewedBy is required"
+  ]
+}
+```
+
+---
+
+### 3. Workflow Logging
+
+The system stores important workflow events in PostgreSQL.
+
+Logs are stored in:
+
+```text
+app.workflow_logs
+```
+
+The logging table tracks:
+
+- workflow name
+- event type
+- status
+- related support request ID
+- human-readable message
+- structured JSON metadata
+- timestamp
+
+Important log events:
+
+```text
+VALIDATION_FAILED
+REQUEST_SAVED
+REVIEW_VALIDATION_FAILED
+REVIEW_BLOCKED
+REVIEW_COMPLETED
+```
+
+Example log query:
+
+```powershell
+docker compose exec postgres psql -U n8n_user -d n8n_db -P pager=off -c "SELECT id, workflow_name, event_type, status, support_request_id, message, metadata, created_at FROM app.workflow_logs ORDER BY id DESC LIMIT 10;"
+```
+
+Example log metadata:
+
+```json
+{
+  "errors": [
+    "customerName is required",
+    "email is required",
+    "message must be at least 10 characters long"
+  ]
+}
+```
+
+Workflow logging makes the system easier to debug and more realistic for business process automation.
+
 ---
 
 ## Database Design
 
-The main table is:
+The main support request table is:
 
 ```text
 app.support_requests
@@ -193,6 +287,14 @@ REJECTED
 
 The system only allows review updates when a request is still `PENDING_APPROVAL`.
 
+The logging table is:
+
+```text
+app.workflow_logs
+```
+
+It stores important workflow events, including validation failures, successful processing steps, blocked review attempts, and completed approval decisions.
+
 ---
 
 ## Important Design Decision
@@ -202,6 +304,25 @@ The system does **not** automatically send AI-generated replies to customers.
 Every AI-generated reply must first be reviewed by a human.
 
 This makes the project safer and more realistic for business use cases.
+
+---
+
+## Prerequisites
+
+Required locally:
+
+- Docker Desktop
+- Docker Compose
+- Ollama
+- `llama3.2:3b` model
+- Git
+- PowerShell
+
+Pull the Ollama model:
+
+```powershell
+ollama pull llama3.2:3b
+```
 
 ---
 
@@ -228,6 +349,13 @@ http://localhost:5678
 
 ```powershell
 docker compose ps
+```
+
+Expected containers:
+
+```text
+ai_workflow_n8n
+ai_workflow_postgres
 ```
 
 ### 4. Check Ollama
@@ -268,6 +396,7 @@ Examples include:
 - review approval request
 - review rejection request
 - invalid review request
+- Ollama API test request
 
 ---
 
@@ -281,6 +410,14 @@ curl.exe -X POST "http://localhost:5678/webhook/support-request" `
   --data-binary "@examples/support-request-urgent.json"
 ```
 
+### Send invalid support request
+
+```powershell
+curl.exe -X POST "http://localhost:5678/webhook/support-request" `
+  -H "Content-Type: application/json" `
+  --data-binary "@examples/support-request-invalid.json"
+```
+
 ### Review request
 
 ```powershell
@@ -289,7 +426,15 @@ curl.exe -X POST "http://localhost:5678/webhook/review-request" `
   --data-binary "@examples/review-request-approve.json"
 ```
 
-### Show latest requests
+### Send invalid review request
+
+```powershell
+curl.exe -X POST "http://localhost:5678/webhook/review-request" `
+  -H "Content-Type: application/json" `
+  --data-binary "@examples/review-request-invalid.json"
+```
+
+### Show latest support requests
 
 ```powershell
 docker compose exec postgres psql -U n8n_user -d n8n_db -P pager=off -c "SELECT id, customer_name, category, priority, approval_status, reviewed_by FROM app.support_requests ORDER BY id DESC LIMIT 10;"
@@ -307,6 +452,12 @@ docker compose exec postgres psql -U n8n_user -d n8n_db -P pager=off -c "SELECT 
 docker compose exec postgres psql -U n8n_user -d n8n_db -P pager=off -c "SELECT id, customer_name, approval_status, reviewed_by, review_comment FROM app.support_requests WHERE approval_status IN ('APPROVED', 'REJECTED') ORDER BY id DESC;"
 ```
 
+### Show workflow logs
+
+```powershell
+docker compose exec postgres psql -U n8n_user -d n8n_db -P pager=off -c "SELECT id, workflow_name, event_type, status, support_request_id, message, metadata, created_at FROM app.workflow_logs ORDER BY id DESC LIMIT 20;"
+```
+
 ---
 
 ## Project Structure
@@ -317,7 +468,10 @@ ai-workflow-automation-platform/
 ├── database/
 │   ├── schema.sql
 │   ├── add-approval-fields.sql
+│   ├── add-workflow-logs.sql
 │   ├── examples/
+│   │   ├── test-insert-support-request.sql
+│   │   └── test-insert-workflow-log.sql
 │   └── approval/
 │
 ├── docs/
@@ -326,6 +480,7 @@ ai-workflow-automation-platform/
 │   └── phase-02-mvp.md
 │
 ├── examples/
+│   ├── ollama-test-request.json
 │   ├── support-request.json
 │   ├── support-request-refund.json
 │   ├── support-request-technical.json
@@ -339,7 +494,9 @@ ai-workflow-automation-platform/
 │   ├── support-request-intake-workflow-v1.json
 │   ├── support-request-intake-workflow-v2.json
 │   ├── support-request-intake-workflow-v3.json
-│   └── review-support-request-workflow-v1.json
+│   ├── support-request-intake-workflow-v4.json
+│   ├── review-support-request-workflow-v1.json
+│   └── review-support-request-workflow-v2.json
 │
 ├── docker-compose.yml
 ├── .env.example
@@ -362,23 +519,27 @@ ai-workflow-automation-platform/
 - Added manual human approval fields in PostgreSQL
 - Built separate review approval workflow
 - Added protection against updating already approved/rejected requests
+- Added workflow logging table
+- Added logging to the support request workflow
+- Added logging to the review approval workflow
+- Logged validation failures, blocked review attempts, and successful workflow events
 
 ---
 
 ## Next Improvements
 
-Planned next steps:
+Planned future improvements:
 
-1. Improve logging and error handling.
-2. Store workflow errors in a separate database table.
-3. Add better documentation and screenshots.
-4. Add an architecture diagram.
-5. Add a simple Spring Boot backend later for approval APIs.
-6. Add a small admin dashboard later.
-7. Add Swagger/OpenAPI documentation if Spring Boot is added.
-8. Add authentication for reviewer actions.
-9. Add optional email or Slack notification.
-10. Add optional OpenAI API provider next to Ollama.
+1. Add more detailed documentation and screenshots.
+2. Add an architecture diagram.
+3. Add a simple Spring Boot backend later for approval APIs.
+4. Add a small admin dashboard later.
+5. Add Swagger/OpenAPI documentation if Spring Boot is added.
+6. Add authentication for reviewer actions.
+7. Add optional email or Slack notification.
+8. Add optional OpenAI API provider next to Ollama.
+9. Add deployment documentation.
+10. Add automated tests for a later backend extension.
 
 ---
 
@@ -387,6 +548,6 @@ Planned next steps:
 Current phase:
 
 ```text
-Human-in-the-loop workflow completed.
-Next phase: error handling, logging, documentation, and portfolio presentation.
+Technical MVP completed.
+Next phase: documentation, screenshots, CV/portfolio presentation, and optional future extensions.
 ```
