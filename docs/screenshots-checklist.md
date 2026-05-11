@@ -1,7 +1,6 @@
 # Screenshots Checklist
 
-This document lists screenshots that should be collected for the portfolio README, LinkedIn, CV project entry, or interview presentation.
-
+This document defines the screenshots I want to collect to present the project clearly in the README, on LinkedIn, in my CV, or during interviews.
 ---
 
 ## Required Screenshots
